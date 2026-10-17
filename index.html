@@ -1,0 +1,166 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Ethiopia Map</title>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background: #245c3a;
+      color: white;
+      padding: 16px 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    #map {
+      height: calc(100vh - 82px);
+      min-height: 400px;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Interactive Map of Ethiopia</h1>
+    <p>Click a place to zoom in and discover its name.</p>
+  </header>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // Initialize the map centered on Ethiopia
+    const map = L.map("map").setView([9.145, 40.4897], 6);
+
+    // Add OpenStreetMap tiles
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+
+    let marker = null;
+    let requestId = 0;
+
+    map.on("click", async function (event) {
+      const latitude = event.latlng.lat;
+      const longitude = event.latlng.lng;
+      const currentRequest = ++requestId;
+
+      // Zoom in to the selected location
+      map.flyTo(event.latlng, 13, {
+        animate: true,
+        duration: 1.2
+      });
+
+      // Create or move the pin
+      if (marker) {
+        marker.setLatLng(event.latlng);
+      } else {
+        marker = L.marker(event.latlng).addTo(map);
+      }
+
+      marker.bindPopup("Finding place name...").openPopup();
+
+      console.log("Latitude:", latitude);
+      console.log("Longitude:", longitude);
+      console.log("Place: Looking up...");
+
+      try {
+        // Find the place name from its coordinates
+        const url =
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2` +
+          `&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error("Place lookup failed");
+        }
+
+        const data = await response.json();
+
+        // Ignore an older lookup if the user clicked again
+        if (currentRequest !== requestId) return;
+
+        const address = data.address || {};
+
+        const placeName =
+          address.city ||
+          address.town ||
+          address.village ||
+          address.municipality ||
+          address.county ||
+          address.suburb ||
+          data.name ||
+          "Unknown place";
+
+        const region =
+          address.state ||
+          address.region ||
+          address.province ||
+          "";
+
+        const fullName = region && region !== placeName
+          ? `${placeName}, ${region}`
+          : placeName;
+
+        marker.bindPopup(`
+          <strong>${escapeHTML(fullName)}</strong><br>
+          Latitude: ${latitude.toFixed(6)}<br>
+          Longitude: ${longitude.toFixed(6)}
+        `).openPopup();
+
+        console.log("Place:", fullName);
+        console.log("Full address:", data.display_name || "Unavailable");
+
+      } catch (error) {
+        if (currentRequest !== requestId) return;
+
+        marker.bindPopup(`
+          <strong>Selected location</strong><br>
+          Place name unavailable<br>
+          Latitude: ${latitude.toFixed(6)}<br>
+          Longitude: ${longitude.toFixed(6)}
+        `).openPopup();
+
+        console.error("Could not retrieve the place name:", error);
+      }
+    });
+
+    // Safely display names returned by the geocoding service
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, function (char) {
+        return {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;"
+        }[char];
+      });
+    }
+  </script>
+</body>
+</html>
